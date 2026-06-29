@@ -23,3 +23,7 @@ Thumbs.db
 # Temp
 *.tmp
 *.bak
+
+# Batch test results
+test/results.json
+test/*.json
