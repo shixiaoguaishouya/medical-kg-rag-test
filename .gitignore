@@ -1,0 +1,25 @@
+# Setup / build scripts (not needed on server)
+test/setup_files.py
+test/write_modules.py
+_patch.py
+_up.py
+
+# Sample database (server has its own)
+test/medical_qa.db
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+*.tmp
+*.bak
