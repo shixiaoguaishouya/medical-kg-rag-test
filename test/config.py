@@ -1,15 +1,10 @@
 """
-配置文件：统一管理数据库路径、API 地址、API Key 等
+配置文件
 """
 
-# ---------------------------------------------------------
-# SQLite 数据库路径
-# ---------------------------------------------------------
-DB_PATH = "/tmp/medical_qa.db"
+import os as _os
+DB_PATH = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "medical_qa.db")
 
-# ---------------------------------------------------------
-# KG-RAG 知识库接口
-# ---------------------------------------------------------
 RAG_HOST = "localhost"
 RAG_PORT = 4103
 RAG_PATH = "/query_with_triples"
@@ -18,16 +13,10 @@ RAG_ALGORITHM_ID = "68d4f55224c9a461c422d4e4"
 RAG_LLM_ID = "6a379d41b37ed8b55c7cb758"
 RAG_SCENE = "basic_med_fm_single_choice"
 
-# ---------------------------------------------------------
-# 通用大模型接口 (OpenAI Compatible)
-# ---------------------------------------------------------
 LLM_URL = "http://api.vgpu.scu.edu.cn/v1/chat/completions"
 LLM_API_KEY = "sk-ce554825fffb473b9a88114e780724f2"
 LLM_MODEL = "Qwen35"
 
-# ---------------------------------------------------------
-# System Prompt（适用于所有基础医学课程）
-# ---------------------------------------------------------
 SYSTEM_PROMPT = (
     "你是一名基础医学领域专家。\n\n"
     "请结合知识库检索到的教材内容回答下面的单项选择题。\n\n"

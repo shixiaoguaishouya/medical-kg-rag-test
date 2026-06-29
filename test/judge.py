@@ -121,3 +121,39 @@ def stats_by_course(results):
         })
 
     return stats
+
+
+
+def stats_by_difficulty(results):
+    """按难度分组统计正确率
+
+    返回 list[dict]：每个难度一行
+    """
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for r in results:
+        diff = r.get("difficulty", "") or "未知"
+        groups[diff].append(r)
+
+    stats = []
+    for diff in sorted(groups.keys()):
+        items = groups[diff]
+        total = len(items)
+        rag_correct = sum(
+            1 for r in items
+            if is_correct(r.get("rag_answer", ""), r.get("answer", ""))[0]
+        )
+        llm_correct = sum(
+            1 for r in items
+            if is_correct(r.get("llm_answer", ""), r.get("answer", ""))[0]
+        )
+        stats.append({
+            "difficulty": diff,
+            "total": total,
+            "rag_correct": rag_correct,
+            "llm_correct": llm_correct,
+            "rag_accuracy": round(rag_correct / total, 4) if total > 0 else 0,
+            "llm_accuracy": round(llm_correct / total, 4) if total > 0 else 0,
+        })
+
+    return stats

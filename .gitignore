@@ -31,3 +31,5 @@ test/*.json
 # Batch test results (Excel)
 test/*.xlsx
 _ref.xlsx
+# Root database (production)
+/medical_qa.db
