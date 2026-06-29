@@ -27,3 +27,7 @@ Thumbs.db
 # Batch test results
 test/results.json
 test/*.json
+
+# Batch test results (Excel)
+test/*.xlsx
+_ref.xlsx

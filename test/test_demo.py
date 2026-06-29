@@ -1,13 +1,14 @@
-"""主程序：KG-RAG 医学题库测试系统
+﻿"""主程序：KG-RAG 医学题库测试系统
 
-流程：SQLite 读取题目 → KG-RAG 接口 → 通用 LLM 接口 → 控制台输出
+流程：SQLite 读取题目 → KG-RAG 接口 → 通用 LLM 接口 → 判题 → 控制台输出 / Excel
 
 用法：
-  python test_demo.py             随机测 1 道题
-  python test_demo.py 5           指定题号
-  python test_demo.py 1 2 3       指定多道题号
-  python test_demo.py -n 5        随机抽 N 道题
-  python test_demo.py --batch     遍历全部题目，保存结果到 results.json
+  python test_demo.py                  随机测 1 道题
+  python test_demo.py 5                指定题号
+  python test_demo.py 1 2 3            指定多道题号
+  python test_demo.py -n 5             随机抽 N 道题
+  python test_demo.py --batch          遍历全部题目，保存结果到 results.json
+  python test_demo.py --batch --export  遍历全部题目，同时导出 Excel
 """
 import sys
 import time
@@ -18,6 +19,7 @@ from datetime import datetime
 from db_reader import read_one_question, read_all_questions, count_questions
 from rag_api import query_rag
 from llm_api import query_llm
+from judge import is_correct, count_correct, stats_by_course
 
 # 结果输出目录
 RESULT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -35,6 +37,9 @@ def format_question(q):
 
 def print_result(q, full_question, rag_result, llm_result, t_rag, t_llm):
     """打印单题测试结果"""
+    rag_correct, rag_opt = is_correct(rag_result["answer"], q.get("answer", ""))
+    llm_correct, llm_opt = is_correct(llm_result["answer"], q.get("answer", ""))
+
     print()
     print("=" * 60)
     print(f"题号：{q['id']}")
@@ -48,13 +53,13 @@ def print_result(q, full_question, rag_result, llm_result, t_rag, t_llm):
     print()
 
     print("-" * 40)
-    print("【KG-RAG】")
+    print(f"【KG-RAG】→ 提取选项: {rag_opt} | {'✓ 正确' if rag_correct else '✗ 错误'}")
     print(f"答案：{rag_result['answer']}")
     print(f"(耗时 {t_rag:.1f}s, 状态: {'OK' if rag_result['ok'] else 'FAIL'})")
     print()
 
     print("-" * 40)
-    print("【通用大模型】")
+    print(f"【通用大模型】→ 提取选项: {llm_opt} | {'✓ 正确' if llm_correct else '✗ 错误'}")
     print(f"答案：{llm_result['answer']}")
     print(f"(耗时 {t_llm:.1f}s, 状态: {'OK' if llm_result['ok'] else 'FAIL'})")
     print("=" * 60)
@@ -78,6 +83,10 @@ def test_one_question(q):
     llm_result = query_llm(question=full_question)
     t_llm = time.time() - t0
 
+    # 判题
+    rag_correct, rag_opt = is_correct(rag_result["answer"], q.get("answer", ""))
+    llm_correct, llm_opt = is_correct(llm_result["answer"], q.get("answer", ""))
+
     return {
         "id": q["id"],
         "course": q.get("course", ""),
@@ -86,6 +95,10 @@ def test_one_question(q):
         "answer": q.get("answer", ""),
         "rag_answer": rag_result["answer"],
         "llm_answer": llm_result["answer"],
+        "rag_opt": rag_opt,
+        "llm_opt": llm_opt,
+        "rag_correct": rag_correct,
+        "llm_correct": llm_correct,
         "rag_time": round(t_rag, 2),
         "llm_time": round(t_llm, 2),
         "rag_ok": rag_result["ok"],
@@ -118,6 +131,9 @@ def run_test(question_id=None):
 
     print_result(q, full_question, rag_result, llm_result, t_rag, t_llm)
 
+    rag_correct, rag_opt = is_correct(rag_result["answer"], q.get("answer", ""))
+    llm_correct, llm_opt = is_correct(llm_result["answer"], q.get("answer", ""))
+
     return {
         "id": q["id"],
         "course": q.get("course", ""),
@@ -126,6 +142,10 @@ def run_test(question_id=None):
         "answer": q.get("answer", ""),
         "rag_answer": rag_result["answer"],
         "llm_answer": llm_result["answer"],
+        "rag_opt": rag_opt,
+        "llm_opt": llm_opt,
+        "rag_correct": rag_correct,
+        "llm_correct": llm_correct,
         "rag_time": round(t_rag, 2),
         "llm_time": round(t_llm, 2),
         "rag_ok": rag_result["ok"],
@@ -133,7 +153,7 @@ def run_test(question_id=None):
     }
 
 
-def run_batch(output_file="results.json"):
+def run_batch(output_file="results.json", export_excel=False):
     """批量模式：遍历全部题目，逐题测试并保存结果"""
     all_qs = read_all_questions()
     total = len(all_qs)
@@ -149,6 +169,9 @@ def run_batch(output_file="results.json"):
 
     print(f"[INFO] 批量测试开始，共 {total} 道题")
     print(f"[INFO] 结果将保存到：{output_path}")
+    if export_excel:
+        excel_path = output_path.replace(".json", ".xlsx")
+        print(f"[INFO] Excel 将保存到：{excel_path}")
     print()
 
     for i, q in enumerate(all_qs, start=1):
@@ -167,12 +190,18 @@ def run_batch(output_file="results.json"):
 
         results.append(result)
 
-        status_parts = []
-        status_parts.append("RAG=OK" if result["rag_ok"] else "RAG=FAIL")
-        status_parts.append("LLM=OK" if result["llm_ok"] else "LLM=FAIL")
-        print(f"完成 ({', '.join(status_parts)}, 耗时 {elapsed:.1f}s)", flush=True)
+        # 正确性标记
+        rag_mark = "✓" if result["rag_correct"] else "✗"
+        llm_mark = "✓" if result["llm_correct"] else "✗"
+        rag_status = "OK" if result["rag_ok"] else "FAIL"
+        llm_status = "OK" if result["llm_ok"] else "FAIL"
+        print(f"完成 (RAG={rag_status}{rag_mark}, LLM={llm_status}{llm_mark}, {elapsed:.1f}s)", flush=True)
 
     t_total = time.time() - t_start
+
+    # 统计正确率
+    overall = count_correct(results)
+    by_course = stats_by_course(results)
 
     # 保存 JSON
     output = {
@@ -181,6 +210,8 @@ def run_batch(output_file="results.json"):
         "rag_fail_count": rag_fail,
         "llm_fail_count": llm_fail,
         "total_time_s": round(t_total, 1),
+        "overall": overall,
+        "by_course": by_course,
         "results": results,
     }
 
@@ -196,8 +227,34 @@ def run_batch(output_file="results.json"):
     print(f"  总耗时：{t_total:.1f}s ({t_total/60:.1f}min)")
     print(f"  KG-RAG 失败：{rag_fail} 次")
     print(f"  通用 LLM 失败：{llm_fail} 次")
+    print()
+    print(f"  KG-RAG 正确率：{overall['rag_correct']}/{overall['total']} = {overall['rag_accuracy']:.2%}")
+    print(f"  通用LLM 正确率：{overall['llm_correct']}/{overall['total']} = {overall['llm_accuracy']:.2%}")
     print(f"  结果已保存：{output_path}")
     print("=" * 60)
+
+    # 按课程输出
+    if len(by_course) > 1:
+        print()
+        print("--- 按课程正确率 ---")
+        for cs in by_course:
+            print(f"  {cs['course']}: RAG={cs['rag_accuracy']:.2%}  LLM={cs['llm_accuracy']:.2%}  (共{cs['total']}题)")
+
+    # 导出 Excel
+    if export_excel:
+        print()
+        print(">>> 正在生成 Excel ...", flush=True)
+        from exporter import export_results
+        stats = {
+            "test_time": output["test_time"],
+            "rag_fail_count": rag_fail,
+            "llm_fail_count": llm_fail,
+            "total_time_s": round(t_total, 1),
+            "overall": overall,
+            "by_course": by_course,
+        }
+        export_results(results, stats, excel_path)
+        print(f"[INFO] Excel 已保存：{excel_path}")
 
 
 if __name__ == "__main__":
@@ -206,22 +263,25 @@ if __name__ == "__main__":
     print()
     args = sys.argv[1:]
 
-    if not args:
-        # 默认：随机 1 道
+    # 解析参数
+    export_excel = "--export" in args
+    batch_mode = "--batch" in args
+
+    # 清理标志参数
+    clean_args = [a for a in args if a not in ("--export",)]
+
+    if not clean_args:
         run_test()
-    elif args[0] == "--batch":
-        # 批量模式：遍历全部题目
-        output_file = args[1] if len(args) >= 2 else "results.json"
-        run_batch(output_file)
-    elif args[0] == "-n" and len(args) >= 2:
-        # -n N：随机 N 道
-        count = min(int(args[1]), total)
+    elif batch_mode:
+        output_file = clean_args[1] if len(clean_args) >= 2 and not clean_args[1].startswith("-") else "results.json"
+        run_batch(output_file, export_excel=export_excel)
+    elif clean_args[0] == "-n" and len(clean_args) >= 2:
+        count = min(int(clean_args[1]), total)
         print("[INFO] 随机抽取 " + str(count) + " 道题")
         print()
         all_qs = read_all_questions()
         for q in random.sample(all_qs, count):
             run_test(q["id"])
     else:
-        # 指定题号（一个或多个）
-        for arg in args:
+        for arg in clean_args:
             run_test(int(arg))
